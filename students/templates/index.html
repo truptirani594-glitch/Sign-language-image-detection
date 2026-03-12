@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Language Image Detection System.</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            padding: 2rem 0;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.2);
+        }
+        .upload-area {
+            border: 3px dashed #007bff;
+            border-radius: 15px;
+            padding: 3rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            background: rgba(0,123,255,0.05);
+        }
+        .upload-area:hover {
+            border-color: #0056b3;
+            background: rgba(0,123,255,0.1);
+        }
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: rgba(40,167,69,0.1);
+        }
+        .btn-primary {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            border: none;
+            border-radius: 25px;
+            padding: 12px 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 20px rgba(0,123,255,0.3);
+        }
+        .result-card {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+            border-radius: 15px;
+            padding: 2rem;
+            text-align: center;
+            margin-top: 2rem;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s ease;
+        }
+        .result-card.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .sign-display {
+            font-size: 4rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .loading-spinner {
+            display: none;
+            color: #007bff;
+        }
+        .file-input {
+            display: none;
+        }
+        .file-label {
+            cursor: pointer;
+            color: #007bff;
+            text-decoration: underline;
+        }
+        .file-label:hover {
+            color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-body p-5">
+                        <h1 class="text-center mb-4">
+                            <i class="fas fa-sign-language text-primary me-3"></i>
+                            Sign Language Image Detection System
+                        </h1>
+                        
+                        <form id="upload-form" enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <div class="upload-area" id="upload-area">
+                                <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                                <h4>Upload an Image</h4>
+                                <p class="text-muted">Drag & drop an image here or <label for="image-input" class="file-label">browse</label></p>
+                                <input type="file" id="image-input" name="image" accept="image/*" class="file-input" required>
+                                <div class="mt-3">
+                                    <button type="submit" class="btn btn-primary" id="submit-btn">
+                                        <i class="fas fa-search me-2"></i>Detect Sign
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                        
+                        <div class="loading-spinner text-center mt-4" id="loading">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Analyzing image...</p>
+                        </div>
+                        
+                        <div class="result-card" id="result-card">
+                            <h3>Detected Sign</h3>
+                            <div class="sign-display" id="sign-display">-</div>
+                            <div id="image-preview" class="mt-3">
+                                <img id="uploaded-image" src="" alt="Uploaded Image" class="img-fluid rounded" style="max-width: 200px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const uploadForm = document.getElementById('upload-form');
+        const uploadArea = document.getElementById('upload-area');
+        const imageInput = document.getElementById('image-input');
+        const submitBtn = document.getElementById('submit-btn');
+        const loading = document.getElementById('loading');
+        const resultCard = document.getElementById('result-card');
+        const signDisplay = document.getElementById('sign-display');
+        const uploadedImage = document.getElementById('uploaded-image');
+        const imagePreview = document.getElementById('image-preview');
+
+        // Drag and drop functionality
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            uploadArea.classList.add('dragover');
+        }
+
+        function unhighlight(e) {
+            uploadArea.classList.remove('dragover');
+        }
+
+        uploadArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            if (files.length > 0) {
+                imageInput.files = files;
+                updateFileName(files[0].name);
+            }
+        }
+
+        imageInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                updateFileName(e.target.files[0].name);
+            }
+        });
+
+        function updateFileName(name) {
+            const fileNameDisplay = uploadArea.querySelector('p');
+            fileNameDisplay.innerHTML = `Selected: <strong>${name}</strong><br><small class="text-muted">Click "Detect Sign" to analyze</small>`;
+        }
+
+        // Form submission
+        uploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            if (!imageInput.files[0]) {
+                alert('Please select an image first.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', imageInput.files[0]);
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+            loading.style.display = 'block';
+            resultCard.classList.remove('show');
+
+            // Start the request
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'processing') {
+                    // If still processing, poll again after a short delay
+                    setTimeout(() => {
+                        pollForResult();
+                    }, 1000);
+                } else {
+                    signDisplay.textContent = data.sign;
+                    // Display the uploaded image
+                    if (data.image_url) {
+                        uploadedImage.src = data.image_url;
+                    } else {
+                        const file = imageInput.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = function(e) {
+                                uploadedImage.src = e.target.result;
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    }
+                    resultCard.classList.add('show');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                signDisplay.textContent = 'Error processing image';
+                resultCard.classList.add('show');
+            })
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-search me-2"></i>Detect Sign';
+                loading.style.display = 'none';
+            });
+        });
+
+        function pollForResult() {
+            // This is a simplified polling mechanism; in a real app, you'd use WebSockets or Server-Sent Events
+            // For now, we'll just show a message that processing is ongoing
+            signDisplay.textContent = 'Processing... Please wait.';
+            resultCard.classList.add('show');
+        }
+    </script>
+</body>
+</html>
